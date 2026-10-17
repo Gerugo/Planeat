@@ -1,0 +1,18 @@
+{
+  "name": "WhippES - Plan Semanal Inteligente & Desperdicio Cero",
+  "short_name": "WhippES",
+  "description": "Tu plan semanal de comidas y lista de la compra optimizada para supermercados españoles con Desperdicio Cero.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#16a34a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

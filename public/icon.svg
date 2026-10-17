@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="128" fill="#16a34a"/>
+  <circle cx="256" cy="256" r="160" stroke="#ffffff" stroke-width="24" stroke-opacity="0.3"/>
+  <!-- Leaf and Fork / Plate styling -->
+  <path d="M190 320C190 240 260 170 340 170C340 250 270 320 190 320Z" fill="#ffffff"/>
+  <path d="M190 320L270 240" stroke="#16a34a" stroke-width="18" stroke-linecap="round"/>
+  <circle cx="200" cy="200" r="28" fill="#bbf7d0"/>
+  <path d="M300 340C325 340 345 320 345 295" stroke="#ffffff" stroke-width="16" stroke-linecap="round"/>
+</svg>
