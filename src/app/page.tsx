@@ -54,6 +54,7 @@ export default function HomePage() {
       'Cebollas',
       'Orégano seco',
     ],
+    excludedIngredients: [],
   });
 
   // Load state from localStorage on mount

@@ -17,6 +17,7 @@ import {
   Key,
   Check,
   Zap,
+  Ban,
 } from 'lucide-react';
 
 interface OnboardingWizardProps {
@@ -32,8 +33,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   isLoading,
   onUseDemo,
 }) => {
-  const [preferences, setPreferences] = useState<UserPreferences>(initialPreferences);
+  const [preferences, setPreferences] = useState<UserPreferences>({
+    ...initialPreferences,
+    excludedIngredients: initialPreferences.excludedIngredients || [],
+  });
   const [newPantryItem, setNewPantryItem] = useState('');
+  const [newExcludedItem, setNewExcludedItem] = useState('');
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState('');
 
@@ -99,6 +104,32 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     setNewPantryItem('');
   };
 
+  const toggleExcluded = (item: string) => {
+    setPreferences((prev) => {
+      const current = prev.excludedIngredients || [];
+      const exists = current.includes(item);
+      return {
+        ...prev,
+        excludedIngredients: exists
+          ? current.filter((i) => i !== item)
+          : [...current, item],
+      };
+    });
+  };
+
+  const addCustomExcluded = () => {
+    if (!newExcludedItem.trim()) return;
+    const item = newExcludedItem.trim();
+    const current = preferences.excludedIngredients || [];
+    if (!current.includes(item)) {
+      setPreferences((prev) => ({
+        ...prev,
+        excludedIngredients: [...current, item],
+      }));
+    }
+    setNewExcludedItem('');
+  };
+
   const DIET_OPTIONS = [
     { id: 'Alta Proteína', label: 'Alta Proteína', desc: '>30g proteína/ración' },
     { id: 'Rápido <25 min', label: 'Rápido <25 min', desc: 'Cocina exprés y fácil' },
@@ -106,6 +137,21 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     { id: 'Vegetariano', label: 'Vegetariano', desc: 'Sin carne ni pescado' },
     { id: 'Mediterráneo', label: 'Mediterráneo', desc: 'AOVE, legumbres y frescos' },
     { id: 'Sin Gluten', label: 'Sin Gluten', desc: 'Apto para celíacos' },
+  ];
+
+  const COMMON_EXCLUDED_SUGGESTIONS = [
+    'Cerdo',
+    'Pescado / Marisco',
+    'Lácteos / Queso',
+    'Cilantro',
+    'Champiñones / Setas',
+    'Picante / Guindilla',
+    'Cebolla cruda',
+    'Frutos secos',
+    'Huevo',
+    'Gluten',
+    'Berenjena',
+    'Apio',
   ];
 
   return (
@@ -391,6 +437,93 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
             className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-xs font-semibold"
           >
             Añadir
+          </button>
+        </div>
+      </div>
+
+      {/* 5. Excluded Ingredients / Allergens */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+          <label className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center text-xs font-bold">
+              5
+            </span>
+            <Ban className="w-4 h-4 text-rose-500" />
+            Ingredientes que NO quieres en tus platos (Exclusiones / Alérgenos)
+          </label>
+          <span className="text-xs text-slate-400">
+            {(preferences.excludedIngredients || []).length} excluidos
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-500">
+          La IA excluirá de forma estricta estos ingredientes de todas las recetas y de la lista de la compra.
+        </p>
+
+        {/* Suggestion Chips */}
+        <div className="flex flex-wrap gap-1.5 p-2 bg-rose-50/40 dark:bg-rose-950/20 rounded-2xl border border-rose-100 dark:border-rose-900/40">
+          {COMMON_EXCLUDED_SUGGESTIONS.map((item) => {
+            const isExcluded = (preferences.excludedIngredients || []).includes(item);
+            return (
+              <button
+                key={item}
+                type="button"
+                onClick={() => toggleExcluded(item)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1.5 ${
+                  isExcluded
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-rose-300'
+                }`}
+              >
+                {isExcluded ? <Ban className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                <span>{item}</span>
+              </button>
+            );
+          })}
+
+          {/* Custom added excluded items */}
+          {(preferences.excludedIngredients || [])
+            .filter((p) => !COMMON_EXCLUDED_SUGGESTIONS.includes(p))
+            .map((item) => (
+              <span
+                key={item}
+                className="px-3 py-1 rounded-full text-xs font-medium bg-rose-700 text-white flex items-center gap-1.5"
+              >
+                <Ban className="w-3 h-3" />
+                <span>{item}</span>
+                <button
+                  type="button"
+                  onClick={() => toggleExcluded(item)}
+                  className="hover:opacity-75"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+        </div>
+
+        {/* Add custom exclusion input */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Añadir otro ingrediente a prohibir (ej. berenjena, ajo, mostaza...)"
+            value={newExcludedItem}
+            onChange={(e) => setNewExcludedItem(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addCustomExcluded();
+              }
+            }}
+            className="flex-1 px-3.5 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+          />
+          <button
+            type="button"
+            onClick={addCustomExcluded}
+            className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Excluir</span>
           </button>
         </div>
       </div>

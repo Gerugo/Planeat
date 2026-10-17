@@ -16,6 +16,7 @@ export interface UserPreferences {
   mealsPerDay: ('lunch' | 'dinner')[];
   dietTags: string[];
   pantryItems: string[];
+  excludedIngredients?: string[];
 }
 
 export interface RecipeIngredient {

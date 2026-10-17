@@ -164,6 +164,11 @@ export async function generateWeeklyPlan(
       .map((s) => `${SUPERMARKETS[s]?.name || s} (${SUPERMARKETS[s]?.brandName || ''})`)
       .join(', ');
 
+    const excludedList =
+      preferences.excludedIngredients && preferences.excludedIngredients.length > 0
+        ? preferences.excludedIngredients.join(', ')
+        : 'Ninguno';
+
     const prompt = `Actúa como el jefe de cocina y experto en economía doméstica de WhippES, la app española de planificación semanal estilo Whipp (whipp.app) con enfoque Desperdicio Cero (Zero-Waste) y Batch-Cooking.
 
 Genera un plan semanal completo para los 7 días de la semana (Lunes a Domingo) adaptado estrictamente a los siguientes parámetros:
@@ -179,12 +184,14 @@ Genera un plan semanal completo para los 7 días de la semana (Lunes a Domingo) 
     }
 - Preferencias / Etiquetas dietéticas: ${preferences.dietTags?.join(', ') || 'Equilibrado'}
 - Despensa existente (NO incluir en la lista de la compra): ${preferences.pantryItems?.join(', ') || 'Básicos de cocina'}
+- INGREDIENTES EXCLUIDOS / ALÉRGENOS (PROHIBIDO INCLUIR): ${excludedList}
 
-REGLAS DE ORO DE DESPERDICIO CERO:
-1. Reutilización cruzada: Si se compra un envase de carne, pescado o verdura (ej. bandeja 600g de pollo en Mercadona o bolsa de 300g de espinacas en Aldi), repártelo en 2 o 3 platos de la semana para que el usagePercentage del producto sea del 100% y no sobre nada en la nevera.
-2. Formatos comerciales reales españoles: Usa tamaños de envase reales en España ('Bandeja 600g', 'Bolsa 300g', 'Brik 1L', 'Malla 3 uds', etc.).
-3. Marcas blancas españolas: Hacendado (Mercadona), GutBio/Milsani (Aldi), Milbona (Lidl), Carrefour Classic/BIO (Carrefour), Dia/Al Punto (Dia), Consum (Consum).
-4. La suma total de estimatedPrice de la shoppingList no debe sobrepasar ${preferences.weeklyBudget} €.
+REGLAS DE ORO DE DESPERDICIO CERO Y EXCLUSIONES:
+1. REGLA ESTRICTA DE EXCLUSIÓN TOTAL: Si el usuario ha indicado ingredientes o alérgenos excluidos (${excludedList}), NINGUNA de las recetas, ingredientes, salsas ni productos de la lista de la compra puede contenerlos ni sugerirlos.
+2. Reutilización cruzada: Si se compra un envase de carne, pescado o verdura (ej. bandeja 600g de pollo en Mercadona o bolsa de 300g de espinacas en Aldi), repártelo en 2 o 3 platos de la semana para que el usagePercentage del producto sea del 100% y no sobre nada en la nevera.
+3. Formatos comerciales reales españoles: Usa tamaños de envase reales en España ('Bandeja 600g', 'Bolsa 300g', 'Brik 1L', 'Malla 3 uds', etc.).
+4. Marcas blancas españolas: Hacendado (Mercadona), GutBio/Milsani (Aldi), Milbona (Lidl), Carrefour Classic/BIO (Carrefour), Dia/Al Punto (Dia), Consum (Consum).
+5. La suma total de estimatedPrice de la shoppingList no debe sobrepasar ${preferences.weeklyBudget} €.
 `;
 
     const response = await ai.models.generateContent({
@@ -204,7 +211,7 @@ REGLAS DE ORO DE DESPERDICIO CERO:
     return {
       plan: parsedPlan,
       source: 'gemini',
-      message: 'Plan generado con éxito por Gemini AI.',
+      message: 'Plan generado con éxito por Gemini AI respetando tus preferencias y exclusiones.',
     };
   } catch (error: any) {
     console.error('Error generating with Gemini in client:', error);
@@ -222,31 +229,55 @@ export function adaptMockPlan(prefs?: UserPreferences): WeeklyPlanResponse {
   if (!prefs) return MOCK_WEEKLY_PLAN;
 
   const ratio = (prefs.diners || 2) / 2;
-  const filteredMeals = MOCK_WEEKLY_PLAN.meals.filter((m) => {
-    if (m.type === 'Comida' && !prefs.mealsPerDay.includes('lunch')) return false;
-    if (m.type === 'Cena' && !prefs.mealsPerDay.includes('dinner')) return false;
-    return true;
-  });
+  const excludedLower = (prefs.excludedIngredients || []).map((e) => e.toLowerCase());
+
+  const filteredMeals = MOCK_WEEKLY_PLAN.meals
+    .filter((m) => {
+      if (m.type === 'Comida' && !prefs.mealsPerDay.includes('lunch')) return false;
+      if (m.type === 'Cena' && !prefs.mealsPerDay.includes('dinner')) return false;
+
+      // Filter out meals containing excluded ingredients
+      if (excludedLower.length > 0) {
+        const titleLower = m.title.toLowerCase();
+        const ingredientsText = m.ingredients.map((i) => i.name.toLowerCase()).join(' ');
+        const hasExcluded = excludedLower.some(
+          (exc) => titleLower.includes(exc) || ingredientsText.includes(exc)
+        );
+        if (hasExcluded) return false;
+      }
+
+      return true;
+    });
 
   const chosenSupers =
     prefs.supermarkets && prefs.supermarkets.length > 0
       ? prefs.supermarkets
       : (['mercadona'] as SupermarketId[]);
 
-  const adaptedShopping = MOCK_WEEKLY_PLAN.shoppingList.map((item, idx) => {
-    const assignedSuper = chosenSupers[idx % chosenSupers.length];
-    const conf = SUPERMARKETS[assignedSuper];
-    return {
-      ...item,
-      recommendedStore: assignedSuper,
-      supermarketProduct: item.supermarketProduct.replace(
-        /(Hacendado|GutBio|Milbona|Carrefour|Dia|Consum)/g,
-        conf?.brandName.split('/')[0].trim() || 'Marca Propia'
-      ),
-      estimatedPrice: Math.round(item.estimatedPrice * ratio * 100) / 100,
-      checked: false,
-    };
-  });
+  const adaptedShopping = MOCK_WEEKLY_PLAN.shoppingList
+    .filter((item) => {
+      if (excludedLower.length > 0) {
+        const prodName = `${item.genericName} ${item.supermarketProduct}`.toLowerCase();
+        if (excludedLower.some((exc) => prodName.includes(exc))) {
+          return false;
+        }
+      }
+      return true;
+    })
+    .map((item, idx) => {
+      const assignedSuper = chosenSupers[idx % chosenSupers.length];
+      const conf = SUPERMARKETS[assignedSuper];
+      return {
+        ...item,
+        recommendedStore: assignedSuper,
+        supermarketProduct: item.supermarketProduct.replace(
+          /(Hacendado|GutBio|Milbona|Carrefour|Dia|Consum)/g,
+          conf?.brandName.split('/')[0].trim() || 'Marca Propia'
+        ),
+        estimatedPrice: Math.round(item.estimatedPrice * ratio * 100) / 100,
+        checked: false,
+      };
+    });
 
   const totalCost = adaptedShopping.reduce((acc, i) => acc + i.estimatedPrice * i.unitsToBuy, 0);
 
