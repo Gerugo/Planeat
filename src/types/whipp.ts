@@ -1,153 +1,64 @@
-export type SupermarketId = 'mercadona' | 'aldi' | 'lidl' | 'carrefour' | 'consum' | 'dia';
+export type SupermarketId = 'mercadona' | 'aldi' | 'lidl' | 'carrefour' | 'dia' | 'consum';
 
-export type DietaryPreference =
-  | 'alta-proteina'
-  | 'rapido'
-  | 'economico'
-  | 'vegetariano'
-  | 'mediterraneo'
-  | 'sin-gluten';
-
-export type MealScope = 'both' | 'lunch' | 'dinner';
-
-export type DayOfWeek =
-  | 'lunes'
-  | 'martes'
-  | 'miercoles'
-  | 'jueves'
-  | 'viernes'
-  | 'sabado'
-  | 'domingo';
-
-export type AisleType =
-  | 'fruta-verdura'
-  | 'carniceria-pescaderia'
-  | 'lacteos-huevos'
-  | 'despensa'
-  | 'congelados'
-  | 'panaderia';
-
-export interface SupermarketConfig {
+export interface Supermarket {
   id: SupermarketId;
   name: string;
-  brand: string;
-  badgeColor: string;
-  accentColor: string;
-  logoInitial: string;
-  description: string;
-}
-
-export interface RecipeIngredient {
-  name: string;
-  amount: string;
-  isFromPantry?: boolean;
-  supermarket?: SupermarketId;
-}
-
-export interface Recipe {
-  id: string;
-  title: string;
-  description: string;
-  prepTimeMinutes: number;
-  cookTimeMinutes: number;
-  servings: number;
-  caloriesPerServing: number;
-  proteinGrams: number;
-  carbsGrams: number;
-  fatGrams: number;
-  tags: string[];
-  ingredients: RecipeIngredient[];
-  instructions: string[];
-  zeroWasteTip?: string;
-  imageUrl?: string;
-}
-
-export interface DayPlan {
-  day: DayOfWeek;
-  dayName: string;
-  lunch?: Recipe;
-  dinner?: Recipe;
-}
-
-export interface RecipeUsage {
-  recipeTitle: string;
-  day: string;
-  mealType: 'Comida' | 'Cena';
-  amountUsed: string;
-}
-
-export interface ShoppingItem {
-  id: string;
-  name: string;
-  supermarket: SupermarketId;
   brandName: string;
-  aisle: AisleType;
-  packageFormat: string;
-  estimatedPrice: number;
-  quantityNeeded: number;
-  usedInRecipes: RecipeUsage[];
-  isChecked?: boolean;
-  isCustom?: boolean;
-}
-
-export interface ZeroWasteUsage {
-  recipeTitle: string;
-  day: string;
-  amount: string;
-  percent: number;
-}
-
-export interface ZeroWasteItem {
-  ingredientName: string;
-  packageDescription: string;
-  supermarket: SupermarketId;
-  totalPackageSize: string;
-  usages: ZeroWasteUsage[];
-  utilizationPercent: number;
-  storageTip: string;
-}
-
-export interface ZeroWasteSummary {
-  overallUtilizationScore: number; // e.g. 96 (%)
-  zeroWasteItems: ZeroWasteItem[];
-  batchCookingTips: string[];
-  estimatedSavingsEuros: number;
-}
-
-export interface WeeklyPlan {
-  id: string;
-  createdAt: string;
-  servings: number;
-  mealScope: MealScope;
-  selectedSupermarkets: SupermarketId[];
-  dietaryPreferences: DietaryPreference[];
-  maxBudget: number;
-  totalEstimatedCost: number;
-  days: DayPlan[];
-  shoppingList: ShoppingItem[];
-  zeroWasteSummary: ZeroWasteSummary;
-  pantryItems: string[];
+  color: string;
+  badgeColor: string;
+  strengths: string[];
 }
 
 export interface UserPreferences {
   supermarkets: SupermarketId[];
-  servings: number;
-  maxBudget: number;
-  mealScope: MealScope;
-  dietaryPreferences: DietaryPreference[];
+  diners: number;
+  weeklyBudget: number;
+  mealsPerDay: ('lunch' | 'dinner')[];
+  dietTags: string[];
   pantryItems: string[];
-  customApiKey?: string;
 }
 
-export interface GeneratePlanRequest {
-  preferences: UserPreferences;
-  apiKey?: string;
+export interface RecipeIngredient {
+  name: string;
+  quantity: string;
+  shoppingItemId: string;
 }
 
-export interface SwapRecipeRequest {
-  day: DayOfWeek;
-  mealType: 'lunch' | 'dinner';
-  currentRecipeId: string;
-  plan: WeeklyPlan;
-  apiKey?: string;
+export interface Meal {
+  id: string;
+  day: 'Lunes' | 'Martes' | 'Miércoles' | 'Jueves' | 'Viernes' | 'Sábado' | 'Domingo';
+  type: 'Comida' | 'Cena';
+  title: string;
+  prepTimeMinutes: number;
+  calories: number;
+  proteinGrams: number;
+  costPerServing: number;
+  tags: string[];
+  ingredients: RecipeIngredient[];
+  steps: string[];
+}
+
+export interface ShoppingItem {
+  id: string;
+  genericName: string;
+  supermarketProduct: string;
+  recommendedStore: SupermarketId;
+  aisle: 'Fruta y Verdura' | 'Carnicería y Pescadería' | 'Lácteos y Huevos' | 'Despensa' | 'Panadería' | 'Congelados';
+  packSize: string;
+  unitsToBuy: number;
+  estimatedPrice: number;
+  usedInMeals: string[];
+  usagePercentage: number;
+  checked?: boolean;
+}
+
+export interface WeeklyPlanResponse {
+  summary: {
+    totalEstimatedCost: number;
+    costPerServingAvg: number;
+    zeroWasteScore: number;
+    savingsTip: string;
+  };
+  meals: Meal[];
+  shoppingList: ShoppingItem[];
 }

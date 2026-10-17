@@ -1,312 +1,197 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from '@google/genai';
-import { UserPreferences, WeeklyPlan, SupermarketId } from '@/types/whipp';
+import { UserPreferences, WeeklyPlanResponse, SupermarketId } from '@/types/whipp';
 import { SUPERMARKETS } from '@/data/supermarkets';
 import { MOCK_WEEKLY_PLAN } from '@/data/mockPlan';
 
 export const runtime = 'nodejs';
 
-// Schema for Gemini Structured Outputs
+// Schema for Gemini Structured Outputs matching WeeklyPlanResponse strictly
 const responseSchema = {
   type: Type.OBJECT,
   properties: {
-    days: {
-      type: Type.ARRAY,
-      description: 'Los 7 días de la semana con sus recetas de comida y cena',
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          day: {
-            type: Type.STRING,
-            description: 'lunes, martes, miercoles, jueves, viernes, sabado, domingo',
-          },
-          dayName: {
-            type: Type.STRING,
-            description: 'Lunes, Martes, Miércoles, etc.',
-          },
-          lunch: {
-            type: Type.OBJECT,
-            properties: {
-              id: { type: Type.STRING },
-              title: { type: Type.STRING },
-              description: { type: Type.STRING },
-              prepTimeMinutes: { type: Type.NUMBER },
-              cookTimeMinutes: { type: Type.NUMBER },
-              servings: { type: Type.NUMBER },
-              caloriesPerServing: { type: Type.NUMBER },
-              proteinGrams: { type: Type.NUMBER },
-              carbsGrams: { type: Type.NUMBER },
-              fatGrams: { type: Type.NUMBER },
-              tags: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-              },
-              zeroWasteTip: { type: Type.STRING },
-              ingredients: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    amount: { type: Type.STRING },
-                    isFromPantry: { type: Type.BOOLEAN },
-                    supermarket: { type: Type.STRING },
-                  },
-                  required: ['name', 'amount'],
-                },
-              },
-              instructions: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-              },
-            },
-            required: [
-              'id',
-              'title',
-              'description',
-              'prepTimeMinutes',
-              'cookTimeMinutes',
-              'servings',
-              'caloriesPerServing',
-              'proteinGrams',
-              'carbsGrams',
-              'fatGrams',
-              'tags',
-              'ingredients',
-              'instructions',
-            ],
-          },
-          dinner: {
-            type: Type.OBJECT,
-            properties: {
-              id: { type: Type.STRING },
-              title: { type: Type.STRING },
-              description: { type: Type.STRING },
-              prepTimeMinutes: { type: Type.NUMBER },
-              cookTimeMinutes: { type: Type.NUMBER },
-              servings: { type: Type.NUMBER },
-              caloriesPerServing: { type: Type.NUMBER },
-              proteinGrams: { type: Type.NUMBER },
-              carbsGrams: { type: Type.NUMBER },
-              fatGrams: { type: Type.NUMBER },
-              tags: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-              },
-              zeroWasteTip: { type: Type.STRING },
-              ingredients: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    amount: { type: Type.STRING },
-                    isFromPantry: { type: Type.BOOLEAN },
-                    supermarket: { type: Type.STRING },
-                  },
-                  required: ['name', 'amount'],
-                },
-              },
-              instructions: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-              },
-            },
-            required: [
-              'id',
-              'title',
-              'description',
-              'prepTimeMinutes',
-              'cookTimeMinutes',
-              'servings',
-              'caloriesPerServing',
-              'proteinGrams',
-              'carbsGrams',
-              'fatGrams',
-              'tags',
-              'ingredients',
-              'instructions',
-            ],
-          },
+    summary: {
+      type: Type.OBJECT,
+      properties: {
+        totalEstimatedCost: {
+          type: Type.NUMBER,
+          description: 'Coste total estimado en euros de la compra semanal',
         },
-        required: ['day', 'dayName'],
+        costPerServingAvg: {
+          type: Type.NUMBER,
+          description: 'Coste medio estimado por ración individual',
+        },
+        zeroWasteScore: {
+          type: Type.NUMBER,
+          description: 'Puntuación porcentual de aprovechamiento de envases (ej. 95-100)',
+        },
+        savingsTip: {
+          type: Type.STRING,
+          description: 'Consejo detallado de batch cooking y ahorro cruzado de envases',
+        },
       },
+      required: ['totalEstimatedCost', 'costPerServingAvg', 'zeroWasteScore', 'savingsTip'],
     },
-    shoppingList: {
+    meals: {
       type: Type.ARRAY,
-      description: 'Lista completa de compra agrupada por supermercado y pasillo',
+      description: 'Lista completa de comidas y cenas para los 7 días de la semana',
       items: {
         type: Type.OBJECT,
         properties: {
           id: { type: Type.STRING },
-          name: { type: Type.STRING },
-          supermarket: {
+          day: {
             type: Type.STRING,
-            description: 'mercadona, aldi, lidl, carrefour, consum, dia',
+            description: 'Lunes, Martes, Miércoles, Jueves, Viernes, Sábado, Domingo',
           },
-          brandName: {
+          type: {
             type: Type.STRING,
-            description: 'Hacendado, GutBio, Milbona, etc.',
+            description: 'Comida o Cena',
           },
-          aisle: {
-            type: Type.STRING,
-            description:
-              'fruta-verdura, carniceria-pescaderia, lacteos-huevos, despensa, congelados, panaderia',
+          title: { type: Type.STRING },
+          prepTimeMinutes: { type: Type.NUMBER },
+          calories: { type: Type.NUMBER },
+          proteinGrams: { type: Type.NUMBER },
+          costPerServing: { type: Type.NUMBER },
+          tags: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
           },
-          packageFormat: {
-            type: Type.STRING,
-            description: 'Bandeja 600g, Bolsa 300g, Bote 400g, etc.',
-          },
-          estimatedPrice: { type: Type.NUMBER },
-          quantityNeeded: { type: Type.NUMBER },
-          usedInRecipes: {
+          ingredients: {
             type: Type.ARRAY,
             items: {
               type: Type.OBJECT,
               properties: {
-                recipeTitle: { type: Type.STRING },
-                day: { type: Type.STRING },
-                mealType: { type: Type.STRING },
-                amountUsed: { type: Type.STRING },
+                name: { type: Type.STRING },
+                quantity: { type: Type.STRING },
+                shoppingItemId: { type: Type.STRING },
               },
-              required: ['recipeTitle', 'day', 'mealType', 'amountUsed'],
+              required: ['name', 'quantity', 'shoppingItemId'],
             },
+          },
+          steps: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
           },
         },
         required: [
           'id',
-          'name',
-          'supermarket',
-          'brandName',
-          'aisle',
-          'packageFormat',
-          'estimatedPrice',
-          'quantityNeeded',
-          'usedInRecipes',
+          'day',
+          'type',
+          'title',
+          'prepTimeMinutes',
+          'calories',
+          'proteinGrams',
+          'costPerServing',
+          'tags',
+          'ingredients',
+          'steps',
         ],
       },
     },
-    zeroWasteSummary: {
-      type: Type.OBJECT,
-      properties: {
-        overallUtilizationScore: {
-          type: Type.NUMBER,
-          description: 'Porcentaje global de aprovechamiento (ej 95-100)',
-        },
-        estimatedSavingsEuros: { type: Type.NUMBER },
-        batchCookingTips: {
-          type: Type.ARRAY,
-          items: { type: Type.STRING },
-        },
-        zeroWasteItems: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              ingredientName: { type: Type.STRING },
-              packageDescription: { type: Type.STRING },
-              supermarket: { type: Type.STRING },
-              totalPackageSize: { type: Type.STRING },
-              utilizationPercent: { type: Type.NUMBER },
-              storageTip: { type: Type.STRING },
-              usages: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    recipeTitle: { type: Type.STRING },
-                    day: { type: Type.STRING },
-                    amount: { type: Type.STRING },
-                    percent: { type: Type.NUMBER },
-                  },
-                  required: ['recipeTitle', 'day', 'amount', 'percent'],
-                },
-              },
-            },
-            required: [
-              'ingredientName',
-              'packageDescription',
-              'supermarket',
-              'totalPackageSize',
-              'utilizationPercent',
-              'storageTip',
-              'usages',
-            ],
+    shoppingList: {
+      type: Type.ARRAY,
+      description: 'Lista de la compra consolidada por producto y supermercado',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          id: { type: Type.STRING },
+          genericName: { type: Type.STRING },
+          supermarketProduct: {
+            type: Type.STRING,
+            description: 'Nombre del producto con marca blanca (ej. Pechuga Pollo Hacendado, Feta GutBio)',
+          },
+          recommendedStore: {
+            type: Type.STRING,
+            description: 'mercadona, aldi, lidl, carrefour, dia, consum',
+          },
+          aisle: {
+            type: Type.STRING,
+            description:
+              'Fruta y Verdura, Carnicería y Pescadería, Lácteos y Huevos, Despensa, Panadería, Congelados',
+          },
+          packSize: {
+            type: Type.STRING,
+            description: 'Formato real en España (ej. Bandeja 600g, Bolsa 300g, Pack 3x80g)',
+          },
+          unitsToBuy: { type: Type.NUMBER },
+          estimatedPrice: { type: Type.NUMBER },
+          usedInMeals: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+          },
+          usagePercentage: {
+            type: Type.NUMBER,
+            description: '100 si se consume por completo entre los platos de la semana',
           },
         },
+        required: [
+          'id',
+          'genericName',
+          'supermarketProduct',
+          'recommendedStore',
+          'aisle',
+          'packSize',
+          'unitsToBuy',
+          'estimatedPrice',
+          'usedInMeals',
+          'usagePercentage',
+        ],
       },
-      required: [
-        'overallUtilizationScore',
-        'estimatedSavingsEuros',
-        'batchCookingTips',
-        'zeroWasteItems',
-      ],
     },
   },
-  required: ['days', 'shoppingList', 'zeroWasteSummary'],
+  required: ['summary', 'meals', 'shoppingList'],
 };
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const preferences: UserPreferences = body.preferences;
-    const clientApiKey = body.apiKey || preferences?.customApiKey;
+    const clientApiKey = body.apiKey;
 
     const apiKey =
       clientApiKey ||
       process.env.GEMINI_API_KEY ||
       process.env.GOOGLE_API_KEY;
 
-    // If no API Key is provided, fallback smoothly to the smart mock plan adapted to user preferences
+    // Graceful fallback to rich mock plan if no API Key provided
     if (!apiKey) {
-      console.log('No Gemini API key detected. Returning high-fidelity mock plan.');
-      const adaptedMock = adaptMockPlanToPreferences(preferences);
+      console.log('No Gemini API key provided. Returning fallback demo plan.');
+      const adaptedMock = adaptMockPlan(preferences);
       return NextResponse.json({
         plan: adaptedMock,
         source: 'mock',
-        message: 'Plan generado con el motor de demostración WhippES.',
+        message: 'Plan de demostración WhippES cargado al instante.',
       });
     }
 
-    // Initialize GoogleGenAI with the new official SDK
+    // Initialize Google GenAI SDK
     const ai = new GoogleGenAI({ apiKey });
 
-    const superNames = preferences.supermarkets
-      .map((s) => `${SUPERMARKETS[s]?.name} (${SUPERMARKETS[s]?.brand})`)
+    const superNames = (preferences.supermarkets || ['mercadona', 'aldi'])
+      .map((s) => `${SUPERMARKETS[s]?.name || s} (${SUPERMARKETS[s]?.brandName || ''})`)
       .join(', ');
 
-    const prompt = `Actúa como el jefe de cocina y experto en economía doméstica de WhippES, la app española de planificación de comidas semanal estilo Whipp (whipp.app) con enfoque Desperdicio Cero (Zero-Waste) y Batch-Cooking.
+    const prompt = `Actúa como el jefe de cocina y experto en economía doméstica de WhippES, la app española de planificación semanal estilo Whipp (whipp.app) con enfoque Desperdicio Cero (Zero-Waste) y Batch-Cooking.
 
-Genera un Plan Semanal de 7 días (Lunes a Domingo) estrictamente estructurado según los siguientes parámetros del usuario:
-- Supermercados seleccionados en España: ${superNames}
-- Comensales: ${preferences.servings} persona(s)
-- Presupuesto semanal máximo: ${preferences.maxBudget} €
-- Alcance de comidas: ${
-      preferences.mealScope === 'both'
-        ? 'Tanto Comidas como Cenas para los 7 días'
-        : preferences.mealScope === 'lunch'
-        ? 'Solo Comidas principales para los 7 días'
-        : 'Solo Cenas ligeras para los 7 días'
+Genera un plan semanal completo para los 7 días de la semana (Lunes a Domingo) adaptado estrictamente a los siguientes parámetros:
+- Supermercados en España: ${superNames}
+- Comensales: ${preferences.diners} persona(s)
+- Presupuesto semanal máximo: ${preferences.weeklyBudget} €
+- Comidas por día: ${
+      preferences.mealsPerDay.includes('lunch') && preferences.mealsPerDay.includes('dinner')
+        ? 'Comida y Cena cada día'
+        : preferences.mealsPerDay.includes('lunch')
+        ? 'Solo Comidas'
+        : 'Solo Cenas'
     }
-- Preferencias dietéticas: ${preferences.dietaryPreferences.join(', ')}
-- Ingredientes que YA TIENE en su despensa (NO comprarlos en la lista de la compra): ${preferences.pantryItems.join(
-      ', '
-    )}
+- Preferencias / Etiquetas dietéticas: ${preferences.dietTags?.join(', ') || 'Equilibrado'}
+- Despensa existente (NO incluir en la lista de la compra): ${preferences.pantryItems?.join(', ') || 'Básicos de cocina'}
 
-REGLAS CRÍTICAS DE DESPERDICIO CERO (BATCH / CROSS-COOKING):
-1. Los ingredientes frescos o envasados comprados en los supermercados españoles deben reutilizarse en 2 o 3 recetas de la semana para que NO quede ningún envase a medias ni se tire comida.
-   Ejemplos reales españoles:
-   - Bandeja 600g pechuga de pollo de Mercadona: 300g el lunes (salteado) + 300g el miércoles (fajitas).
-   - Bolsa 300g espinacas frescas: 150g en potaje/salteado el martes + 150g en tortilla el jueves.
-   - Bote garbanzos cocidos 400g: 200g salteados el martes + 200g ensalada el viernes.
-   - Queso feta o mozzarella: repartido en 2 comidas de la semana.
-2. Cada producto de la lista de la compra debe indicar:
-   - Su marca blanca correspondiente (ej. Hacendado para Mercadona, GutBio/Milsani para Aldi, Milbona/Chef Select para Lidl, Carrefour Classic/BIO para Carrefour, Consum/Eco para Consum, Dia/Al Punto para Dia).
-   - Formato de envase real comercial en España (ej: 'Bandeja 600g', 'Bolsa 300g', 'Pack 2x150g', 'Malla 3 Uds').
-   - Precio real estimado en euros (la suma total debe respetar el presupuesto del usuario de ${preferences.maxBudget} €).
-   - En qué recetas de la semana se usa cada producto ('usedInRecipes').
-3. No incluyas en la lista de la compra ingredientes que el usuario ya tenga en su despensa.
-4. Genera recetas deliciosas, fáciles, rápidas (<25 min o aptas para batch cooking) y ricas en nutrientes.
+REGLAS DE ORO DE DESPERDICIO CERO:
+1. Reutilización cruzada: Si se compra un envase de carne, pescado o verdura (ej. bandeja 600g de pollo en Mercadona o bolsa de 300g de espinacas en Aldi), repártelo en 2 o 3 platos de la semana para que el usagePercentage del producto sea del 100% y no sobre nada en la nevera.
+2. Formatos comerciales reales españoles: Usa tamaños de envase reales en España ('Bandeja 600g', 'Bolsa 300g', 'Brik 1L', 'Malla 3 uds', etc.).
+3. Marcas blancas españolas: Hacendado (Mercadona), GutBio/Milsani (Aldi), Milbona (Lidl), Carrefour Classic/BIO (Carrefour), Dia/Al Punto (Dia), Consum (Consum).
+4. La suma total de estimatedPrice de la shoppingList no debe sobrepasar ${preferences.weeklyBudget} €.
 `;
 
     const response = await ai.models.generateContent({
@@ -315,126 +200,58 @@ REGLAS CRÍTICAS DE DESPERDICIO CERO (BATCH / CROSS-COOKING):
       config: {
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
-        temperature: 0.3,
+        temperature: 0.25,
       },
     });
 
-    const responseText = response.text;
-    if (!responseText) {
-      throw new Error('Gemini devolvió una respuesta vacía');
-    }
+    const text = response.text;
+    if (!text) throw new Error('Respuesta vacía de Gemini');
 
-    const parsedData = JSON.parse(responseText);
-
-    // Calculate total cost from items
-    const totalEstimatedCost = parsedData.shoppingList.reduce(
-      (acc: number, item: any) =>
-        acc + (item.estimatedPrice || 0) * (item.quantityNeeded || 1),
-      0
-    );
-
-    const generatedPlan: WeeklyPlan = {
-      id: `plan-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      servings: preferences.servings,
-      mealScope: preferences.mealScope,
-      selectedSupermarkets: preferences.supermarkets,
-      dietaryPreferences: preferences.dietaryPreferences,
-      maxBudget: preferences.maxBudget,
-      totalEstimatedCost: Math.round(totalEstimatedCost * 100) / 100,
-      days: parsedData.days,
-      shoppingList: parsedData.shoppingList.map((item: any, idx: number) => ({
-        ...item,
-        id: item.id || `item-${idx + 1}`,
-        isChecked: false,
-      })),
-      zeroWasteSummary: parsedData.zeroWasteSummary,
-      pantryItems: preferences.pantryItems,
-    };
+    const parsedPlan: WeeklyPlanResponse = JSON.parse(text);
 
     return NextResponse.json({
-      plan: generatedPlan,
+      plan: parsedPlan,
       source: 'gemini',
-      message: 'Plan semanal generado con éxito por Gemini AI.',
+      message: 'Plan generado con éxito por Gemini AI.',
     });
   } catch (error: any) {
     console.error('Error generating plan with Gemini:', error);
-    // Graceful fallback to adapted mock plan on any API failure so user experience never breaks
-    const adaptedMock = adaptMockPlanToPreferences(MOCK_WEEKLY_PLAN as any);
+    const adaptedMock = adaptMockPlan();
     return NextResponse.json({
       plan: adaptedMock,
       source: 'fallback',
       warning:
-        'Se ha cargado un plan inteligente de muestra debido a un error de conexión con Gemini: ' +
+        'Se ha cargado un plan de demostración debido a un error con Gemini: ' +
         (error?.message || 'Error desconocido'),
     });
   }
 }
 
-// Helper to adapt mock plan to customized comensales/budget/supermarkets
-function adaptMockPlanToPreferences(prefs?: UserPreferences): WeeklyPlan {
+function adaptMockPlan(prefs?: UserPreferences): WeeklyPlanResponse {
   if (!prefs) return MOCK_WEEKLY_PLAN;
 
-  const ratio = (prefs.servings || 2) / 2;
-  const targetBudget = prefs.maxBudget || 60;
-
-  const adaptedDays = MOCK_WEEKLY_PLAN.days.map((day) => ({
-    ...day,
-    lunch:
-      prefs.mealScope === 'dinner'
-        ? undefined
-        : day.lunch
-        ? {
-            ...day.lunch,
-            servings: prefs.servings,
-          }
-        : undefined,
-    dinner:
-      prefs.mealScope === 'lunch'
-        ? undefined
-        : day.dinner
-        ? {
-            ...day.dinner,
-            servings: prefs.servings,
-          }
-        : undefined,
-  }));
-
-  // Re-map supermarket brands if user only selected specific ones
-  const chosenSupers =
-    prefs.supermarkets && prefs.supermarkets.length > 0
-      ? prefs.supermarkets
-      : (['mercadona'] as SupermarketId[]);
-
-  const adaptedShopping = MOCK_WEEKLY_PLAN.shoppingList.map((item, idx) => {
-    const assignedSuper = chosenSupers[idx % chosenSupers.length];
-    const supConfig = SUPERMARKETS[assignedSuper];
-    return {
-      ...item,
-      supermarket: assignedSuper,
-      brandName: supConfig?.brand || item.brandName,
-      estimatedPrice: Math.round(item.estimatedPrice * ratio * 100) / 100,
-      isChecked: false,
-    };
+  const ratio = (prefs.diners || 2) / 2;
+  const filteredMeals = MOCK_WEEKLY_PLAN.meals.filter((m) => {
+    if (m.type === 'Comida' && !prefs.mealsPerDay.includes('lunch')) return false;
+    if (m.type === 'Cena' && !prefs.mealsPerDay.includes('dinner')) return false;
+    return true;
   });
 
-  const totalCost = adaptedShopping.reduce(
-    (acc, i) => acc + i.estimatedPrice * (i.quantityNeeded || 1),
-    0
-  );
+  const adaptedShopping = MOCK_WEEKLY_PLAN.shoppingList.map((item) => ({
+    ...item,
+    estimatedPrice: Math.round(item.estimatedPrice * ratio * 100) / 100,
+    checked: false,
+  }));
+
+  const totalCost = adaptedShopping.reduce((acc, i) => acc + i.estimatedPrice * i.unitsToBuy, 0);
 
   return {
-    ...MOCK_WEEKLY_PLAN,
-    id: `plan-${Date.now()}`,
-    createdAt: new Date().toISOString(),
-    servings: prefs.servings || 2,
-    mealScope: prefs.mealScope || 'both',
-    selectedSupermarkets: chosenSupers,
-    dietaryPreferences: prefs.dietaryPreferences || ['alta-proteina', 'mediterraneo'],
-    maxBudget: targetBudget,
-    totalEstimatedCost: Math.round(totalCost * 100) / 100,
-    days: adaptedDays,
+    summary: {
+      ...MOCK_WEEKLY_PLAN.summary,
+      totalEstimatedCost: Math.round(totalCost * 100) / 100,
+      costPerServingAvg: Math.round((totalCost / (filteredMeals.length * prefs.diners)) * 100) / 100,
+    },
+    meals: filteredMeals,
     shoppingList: adaptedShopping,
-    pantryItems: prefs.pantryItems || MOCK_WEEKLY_PLAN.pantryItems,
   };
 }

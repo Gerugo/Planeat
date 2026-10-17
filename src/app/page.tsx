@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  WeeklyPlan,
-  Recipe,
-  DayOfWeek,
+  WeeklyPlanResponse,
+  Meal,
   UserPreferences,
   ShoppingItem,
 } from '@/types/whipp';
@@ -20,49 +19,42 @@ import {
   ShoppingBag,
   Recycle,
   SlidersHorizontal,
-  Sparkles,
-  RefreshCw,
   ChefHat,
   CheckCircle2,
   AlertCircle,
-  HelpCircle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-const STORAGE_KEY_PLAN = 'whipp_es_weekly_plan';
-const STORAGE_KEY_PREFS = 'whipp_es_user_preferences';
+const STORAGE_KEY_PLAN = 'whipp_es_weekly_plan_v2';
+const STORAGE_KEY_PREFS = 'whipp_es_user_preferences_v2';
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<'menu' | 'shopping' | 'zerowaste' | 'wizard'>('menu');
-  const [plan, setPlan] = useState<WeeklyPlan>(MOCK_WEEKLY_PLAN);
+  const [plan, setPlan] = useState<WeeklyPlanResponse>(MOCK_WEEKLY_PLAN);
   const [isLoading, setIsLoading] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
-  // Selected recipe modal state
-  const [selectedRecipeData, setSelectedRecipeData] = useState<{
-    recipe: Recipe;
-    dayName: string;
-    mealType: string;
-  } | null>(null);
+  // Selected meal for detail modal
+  const [selectedMeal, setSelectedMeal] = useState<Meal | null>(null);
 
-  // Preferences state
+  // User preferences
   const [preferences, setPreferences] = useState<UserPreferences>({
     supermarkets: ['mercadona', 'aldi'],
-    servings: 2,
-    maxBudget: 60,
-    mealScope: 'both',
-    dietaryPreferences: ['alta-proteina', 'mediterraneo', 'rapido'],
+    diners: 2,
+    weeklyBudget: 60,
+    mealsPerDay: ['lunch', 'dinner'],
+    dietTags: ['Alta Proteína', 'Mediterráneo', 'Rápido <25 min'],
     pantryItems: [
       'Aceite de oliva virgen extra (AOVE)',
-      'Sal fina',
-      'Pimienta negra',
-      'Ajo en dientes',
+      'Sal fina y sal gruesa',
+      'Pimienta negra molida',
+      'Dientes de ajo',
       'Cebollas',
       'Orégano seco',
     ],
   });
 
-  // Load from localStorage on client mount
+  // Load state from localStorage on mount
   useEffect(() => {
     try {
       const savedPlan = localStorage.getItem(STORAGE_KEY_PLAN);
@@ -79,8 +71,8 @@ export default function HomePage() {
     }
   }, []);
 
-  // Save plan to localStorage on changes
-  const updatePlan = (newPlan: WeeklyPlan) => {
+  // Save plan to localStorage
+  const updatePlan = (newPlan: WeeklyPlanResponse) => {
     setPlan(newPlan);
     try {
       localStorage.setItem(STORAGE_KEY_PLAN, JSON.stringify(newPlan));
@@ -104,8 +96,8 @@ export default function HomePage() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Generate Plan via Gemini API or Fallback
-  const handleGeneratePlan = async (prefs: UserPreferences) => {
+  // Generate Plan with Gemini API
+  const handleGeneratePlan = async (prefs: UserPreferences, customApiKey?: string) => {
     setIsLoading(true);
     updatePreferences(prefs);
 
@@ -115,7 +107,7 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           preferences: prefs,
-          apiKey: prefs.customApiKey,
+          apiKey: customApiKey,
         }),
       });
 
@@ -132,14 +124,14 @@ export default function HomePage() {
         if (data.source === 'gemini') {
           showNotification('¡Menú generado por Gemini AI con éxito!', 'success');
         } else {
-          showNotification('Menú optimizado cargado (Modo Demo WhippES)', 'info');
+          showNotification('Menú cargado (Modo Demo WhippES)', 'info');
         }
       } else {
         throw new Error('No se recibió el plan');
       }
     } catch (err: any) {
-      console.error('Plan generation failed:', err);
-      showNotification('Error al conectar con el servidor. Usando plan de demostración.', 'error');
+      console.error('Plan generation error:', err);
+      showNotification('Error al conectar con Gemini. Usando plan de muestra.', 'error');
       updatePlan(MOCK_WEEKLY_PLAN);
       setActiveTab('menu');
     } finally {
@@ -150,32 +142,28 @@ export default function HomePage() {
   const handleUseDemo = () => {
     updatePlan(MOCK_WEEKLY_PLAN);
     setActiveTab('menu');
-    showNotification('Plan de demostración WhippES cargado al instante', 'info');
+    showNotification('Plan de demostración WhippES cargado', 'info');
   };
 
-  // Toggle Shopping List item checkbox (persisted in plan)
+  // Toggle Shopping List item checkbox
   const handleToggleShoppingItem = (id: string) => {
-    const updatedShoppingList = plan.shoppingList.map((item) =>
-      item.id === id ? { ...item, isChecked: !item.isChecked } : item
+    const updatedList = plan.shoppingList.map((item) =>
+      item.id === id ? { ...item, checked: !item.checked } : item
     );
-    updatePlan({
-      ...plan,
-      shoppingList: updatedShoppingList,
-    });
-  };
-
-  // Add custom shopping item
-  const handleAddShoppingItem = (newItem: Omit<ShoppingItem, 'id'>) => {
-    const itemWithId: ShoppingItem = {
-      ...newItem,
-      id: `custom-${Date.now()}`,
-    };
-    const updatedList = [itemWithId, ...plan.shoppingList];
     updatePlan({
       ...plan,
       shoppingList: updatedList,
     });
-    showNotification(`"${newItem.name}" añadido a la lista`, 'success');
+  };
+
+  // Add custom shopping item
+  const handleAddShoppingItem = (newItem: ShoppingItem) => {
+    const updatedList = [newItem, ...plan.shoppingList];
+    updatePlan({
+      ...plan,
+      shoppingList: updatedList,
+    });
+    showNotification(`"${newItem.supermarketProduct}" añadido a la compra`, 'success');
   };
 
   // Delete custom shopping item
@@ -187,9 +175,8 @@ export default function HomePage() {
     });
   };
 
-  // Swap recipe
-  const handleSwapRecipe = (day: DayOfWeek, mealType: 'lunch' | 'dinner') => {
-    // Generate an intelligent alternative recipe using existing week ingredients
+  // Swap meal
+  const handleSwapMeal = (mealId: string) => {
     const alternativeTitles = [
       'Wok de Verduras Salteadas con Dados de Pollo y Sésamo',
       'Tortilla de Calabacín Jugosa con Queso y Tomatitos',
@@ -198,39 +185,28 @@ export default function HomePage() {
       'Ensalada Templada de Espinacas, Pollo Crujiente y Feta',
       'Bowl de Arroz con Aguacate, Huevo a la Plancha y Soja',
     ];
-
     const randomTitle = alternativeTitles[Math.floor(Math.random() * alternativeTitles.length)];
 
-    const updatedDays = plan.days.map((d) => {
-      if (d.day === day) {
-        const targetRecipe = mealType === 'lunch' ? d.lunch : d.dinner;
-        if (!targetRecipe) return d;
-
-        const swappedRecipe: Recipe = {
-          ...targetRecipe,
+    const updatedMeals = plan.meals.map((m) => {
+      if (m.id === mealId) {
+        return {
+          ...m,
           id: `swapped-${Date.now()}`,
           title: randomTitle,
-          description: `Alternativa rápida y equilibrada manteniendo la compatibilidad de ingredientes de la cesta de la compra.`,
-          prepTimeMinutes: Math.floor(Math.random() * 6) + 8,
-          cookTimeMinutes: Math.floor(Math.random() * 8) + 10,
-          caloriesPerServing: Math.floor(Math.random() * 120) + 380,
-          proteinGrams: Math.floor(Math.random() * 15) + 26,
-        };
-
-        return {
-          ...d,
-          [mealType]: swappedRecipe,
+          prepTimeMinutes: Math.floor(Math.random() * 6) + 12,
+          calories: Math.floor(Math.random() * 100) + 380,
+          proteinGrams: Math.floor(Math.random() * 12) + 26,
         };
       }
-      return d;
+      return m;
     });
 
     updatePlan({
       ...plan,
-      days: updatedDays,
+      meals: updatedMeals,
     });
 
-    showNotification(`Receta de ${day} cambiada por "${randomTitle}"`, 'info');
+    showNotification(`Plato cambiado por "${randomTitle}"`, 'info');
   };
 
   return (
@@ -260,7 +236,6 @@ export default function HomePage() {
       {/* Main Top Header */}
       <header className="sticky top-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          {/* Logo & Brand */}
           <div
             onClick={() => setActiveTab('menu')}
             className="flex items-center gap-2.5 cursor-pointer select-none"
@@ -283,22 +258,20 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Supermarket Badges Active in Plan */}
           <div className="hidden sm:flex items-center gap-1.5">
-            {plan.selectedSupermarkets.map((supId) => {
+            {preferences.supermarkets.map((supId) => {
               const conf = SUPERMARKETS[supId];
               return (
                 <span
                   key={supId}
-                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold border ${conf.badgeColor}`}
+                  className={`px-2 py-0.5 rounded-lg text-[11px] font-bold border ${conf?.badgeColor || ''}`}
                 >
-                  {conf.name}
+                  {conf?.name || supId}
                 </span>
               );
             })}
           </div>
 
-          {/* New Plan CTA */}
           <button
             type="button"
             onClick={() => setActiveTab('wizard')}
@@ -310,7 +283,7 @@ export default function HomePage() {
           </button>
         </div>
 
-        {/* Tab Navigation (Desktop & Mobile) */}
+        {/* Tab Navigation */}
         <div className="max-w-5xl mx-auto px-4 sm:px-6 flex items-center gap-1 overflow-x-auto no-scrollbar border-t border-slate-100 dark:border-slate-800">
           <button
             type="button"
@@ -318,7 +291,7 @@ export default function HomePage() {
             className={`py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
               activeTab === 'menu'
                 ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <CalendarDays className="w-4 h-4" />
@@ -331,13 +304,13 @@ export default function HomePage() {
             className={`py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
               activeTab === 'shopping'
                 ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <ShoppingBag className="w-4 h-4" />
             <span>Lista de la Compra</span>
             <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-              {plan.shoppingList.filter((i) => !i.isChecked).length}
+              {plan.shoppingList.filter((i) => !i.checked).length}
             </span>
           </button>
 
@@ -347,13 +320,13 @@ export default function HomePage() {
             className={`py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
               activeTab === 'zerowaste'
                 ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <Recycle className="w-4 h-4" />
             <span>Desperdicio Cero</span>
             <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-extrabold">
-              {plan.zeroWasteSummary.overallUtilizationScore}%
+              {plan.summary.zeroWasteScore}%
             </span>
           </button>
 
@@ -363,7 +336,7 @@ export default function HomePage() {
             className={`py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-all flex-shrink-0 ${
               activeTab === 'wizard'
                 ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400'
-                : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <SlidersHorizontal className="w-4 h-4" />
@@ -376,18 +349,16 @@ export default function HomePage() {
       <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 pb-24 md:pb-12">
         {activeTab === 'menu' && (
           <WeeklyMealPlan
-            plan={plan}
-            onOpenRecipe={(recipe, dayName, mealType) =>
-              setSelectedRecipeData({ recipe, dayName, mealType })
-            }
-            onSwapRecipe={handleSwapRecipe}
+            meals={plan.meals}
+            onOpenMeal={(meal) => setSelectedMeal(meal)}
+            onSwapMeal={handleSwapMeal}
           />
         )}
 
         {activeTab === 'shopping' && (
           <SmartShoppingList
             items={plan.shoppingList}
-            maxBudget={plan.maxBudget}
+            weeklyBudget={preferences.weeklyBudget}
             onToggleItem={handleToggleShoppingItem}
             onAddItem={handleAddShoppingItem}
             onDeleteItem={handleDeleteShoppingItem}
@@ -395,7 +366,10 @@ export default function HomePage() {
         )}
 
         {activeTab === 'zerowaste' && (
-          <ZeroWasteTracker summary={plan.zeroWasteSummary} />
+          <ZeroWasteTracker
+            summary={plan.summary}
+            shoppingList={plan.shoppingList}
+          />
         )}
 
         {activeTab === 'wizard' && (
@@ -408,15 +382,13 @@ export default function HomePage() {
         )}
       </main>
 
-      {/* Recipe Modal Component (Follows light-dismiss-a-dialog guidance) */}
+      {/* Modal Recipe */}
       <RecipeModal
-        recipe={selectedRecipeData?.recipe || null}
-        dayName={selectedRecipeData?.dayName || ''}
-        mealType={selectedRecipeData?.mealType || ''}
-        onClose={() => setSelectedRecipeData(null)}
+        meal={selectedMeal}
+        onClose={() => setSelectedMeal(null)}
       />
 
-      {/* Modern Mobile Bottom Navigation Bar */}
+      {/* Mobile Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 md:hidden flex justify-around items-center py-2 px-1">
         <button
           type="button"
@@ -442,7 +414,7 @@ export default function HomePage() {
         >
           <ShoppingBag className="w-5 h-5" />
           <span>Compra</span>
-          {plan.shoppingList.filter((i) => !i.isChecked).length > 0 && (
+          {plan.shoppingList.filter((i) => !i.checked).length > 0 && (
             <span className="absolute top-0 right-1 w-2 h-2 rounded-full bg-emerald-600" />
           )}
         </button>

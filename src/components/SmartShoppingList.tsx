@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ShoppingItem, SupermarketId, AisleType } from '@/types/whipp';
-import { SUPERMARKETS, AISLE_LABELS } from '@/data/supermarkets';
+import { ShoppingItem, SupermarketId } from '@/types/whipp';
+import { SUPERMARKETS } from '@/data/supermarkets';
 import {
   ShoppingBag,
   CheckCircle2,
@@ -12,65 +12,67 @@ import {
   Trash2,
   DollarSign,
   Store,
-  Layers,
-  Sparkles,
   Check,
-  Copy,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface SmartShoppingListProps {
   items: ShoppingItem[];
-  maxBudget: number;
+  weeklyBudget: number;
   onToggleItem: (id: string) => void;
-  onAddItem: (item: Omit<ShoppingItem, 'id'>) => void;
+  onAddItem: (item: ShoppingItem) => void;
   onDeleteItem?: (id: string) => void;
 }
 
+const AISLES = [
+  'Fruta y Verdura',
+  'Carnicería y Pescadería',
+  'Lácteos y Huevos',
+  'Despensa',
+  'Panadería',
+  'Congelados',
+] as const;
+
 export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
   items,
-  maxBudget,
+  weeklyBudget,
   onToggleItem,
   onAddItem,
   onDeleteItem,
 }) => {
   const [selectedSuper, setSelectedSuper] = useState<SupermarketId | 'all'>('all');
-  const [selectedAisle, setSelectedAisle] = useState<AisleType | 'all'>('all');
+  const [selectedAisle, setSelectedAisle] = useState<string | 'all'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [copiedNotification, setCopiedNotification] = useState(false);
 
-  // New item form state
-  const [newName, setNewName] = useState('');
-  const [newSuper, setNewSuper] = useState<SupermarketId>('mercadona');
-  const [newAisle, setNewAisle] = useState<AisleType>('fruta-verdura');
+  // New item modal state
+  const [newGenericName, setNewGenericName] = useState('');
+  const [newSupermarketProduct, setNewSupermarketProduct] = useState('');
+  const [newStore, setNewStore] = useState<SupermarketId>('mercadona');
+  const [newAisle, setNewAisle] = useState<(typeof AISLES)[number]>('Fruta y Verdura');
+  const [newPackSize, setNewPackSize] = useState('1 unidad');
   const [newPrice, setNewPrice] = useState('2.00');
-  const [newFormat, setNewFormat] = useState('1 unidad');
 
   // Calculations
-  const totalCost = items.reduce(
-    (acc, item) => acc + item.estimatedPrice * (item.quantityNeeded || 1),
-    0
-  );
-  const checkedItemsCount = items.filter((i) => i.isChecked).length;
-  const progressPercent = Math.min(100, Math.round((totalCost / maxBudget) * 100));
-  const isOverBudget = totalCost > maxBudget;
-  const savings = Math.max(0, maxBudget - totalCost);
+  const totalCost = items.reduce((acc, item) => acc + item.estimatedPrice * item.unitsToBuy, 0);
+  const checkedItemsCount = items.filter((i) => i.checked).length;
+  const progressPercent = Math.min(100, Math.round((totalCost / (weeklyBudget || 1)) * 100));
+  const isOverBudget = totalCost > weeklyBudget;
+  const savings = Math.max(0, weeklyBudget - totalCost);
 
-  // Filter items
+  // Filtering
   const filteredItems = items.filter((item) => {
-    if (selectedSuper !== 'all' && item.supermarket !== selectedSuper) return false;
+    if (selectedSuper !== 'all' && item.recommendedStore !== selectedSuper) return false;
     if (selectedAisle !== 'all' && item.aisle !== selectedAisle) return false;
     return true;
   });
 
-  // Unique supermarkets present in the list
-  const presentSupermarkets = Array.from(new Set(items.map((i) => i.supermarket)));
+  const presentSupermarkets = Array.from(new Set(items.map((i) => i.recommendedStore)));
 
   const handleToggle = (id: string) => {
     onToggleItem(id);
     const item = items.find((i) => i.id === id);
-    if (item && !item.isChecked && checkedItemsCount + 1 === items.length) {
-      // All items completed celebration!
+    if (item && !item.checked && checkedItemsCount + 1 === items.length) {
       confetti({
         particleCount: 80,
         spread: 60,
@@ -81,17 +83,17 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
 
   const handleCopyWhatsApp = () => {
     let text = `🛒 *LISTA DE LA COMPRA - WhippES*\n`;
-    text += `💰 Estimado: ${totalCost.toFixed(2)}€ / Máx: ${maxBudget}€\n\n`;
+    text += `💰 Estimado: ${totalCost.toFixed(2)}€ / Presupuesto: ${weeklyBudget}€\n\n`;
 
     presentSupermarkets.forEach((supId) => {
-      const supConfig = SUPERMARKETS[supId];
-      const supItems = items.filter((i) => i.supermarket === supId);
+      const conf = SUPERMARKETS[supId];
+      const supItems = items.filter((i) => i.recommendedStore === supId);
       if (supItems.length === 0) return;
 
-      text += `📍 *${supConfig.name} (${supConfig.brand})*\n`;
+      text += `📍 *${conf?.name || supId} (${conf?.brandName || ''})*\n`;
       supItems.forEach((it) => {
-        const check = it.isChecked ? '✅' : '⬜';
-        text += `${check} ${it.name} (${it.packageFormat}) - ${it.estimatedPrice.toFixed(2)}€\n`;
+        const check = it.checked ? '✅' : '⬜';
+        text += `${check} ${it.supermarketProduct} (${it.packSize}) - ${it.estimatedPrice.toFixed(2)}€\n`;
       });
       text += `\n`;
     });
@@ -105,28 +107,30 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
 
   const handleCreateCustomItem = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim()) return;
+    if (!newGenericName.trim()) return;
 
     onAddItem({
-      name: newName.trim(),
-      supermarket: newSuper,
-      brandName: SUPERMARKETS[newSuper].brand,
+      id: `custom-${Date.now()}`,
+      genericName: newGenericName.trim(),
+      supermarketProduct: newSupermarketProduct.trim() || newGenericName.trim(),
+      recommendedStore: newStore,
       aisle: newAisle,
-      packageFormat: newFormat.trim() || '1 unidad',
+      packSize: newPackSize.trim() || '1 ud',
+      unitsToBuy: 1,
       estimatedPrice: parseFloat(newPrice) || 0,
-      quantityNeeded: 1,
-      usedInRecipes: [{ recipeTitle: 'Añadido manual', day: 'Semana', mealType: 'Comida', amountUsed: '1 ud' }],
-      isChecked: false,
-      isCustom: true,
+      usedInMeals: ['Añadido manual'],
+      usagePercentage: 100,
+      checked: false,
     });
 
-    setNewName('');
+    setNewGenericName('');
+    setNewSupermarketProduct('');
     setShowAddModal(false);
   };
 
   return (
     <div className="space-y-6">
-      {/* Budget & Summary Card */}
+      {/* Header & Budget Card */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800 shadow-soft space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -137,16 +141,15 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
               </h2>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {checkedItemsCount} de {items.length} productos comprados ({Math.round((checkedItemsCount / Math.max(1, items.length)) * 100)}%)
+              {checkedItemsCount} de {items.length} productos marcados ({Math.round((checkedItemsCount / Math.max(1, items.length)) * 100)}%)
             </p>
           </div>
 
-          {/* Action buttons */}
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleCopyWhatsApp}
-              className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-200 dark:border-emerald-800 transition-all flex items-center gap-1.5"
+              className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-xs font-bold border border-emerald-200 dark:border-emerald-800 transition-all flex items-center gap-1.5"
             >
               {copiedNotification ? (
                 <>
@@ -156,7 +159,7 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
               ) : (
                 <>
                   <Share2 className="w-3.5 h-3.5" />
-                  <span>Copiar para WhatsApp</span>
+                  <span>Compartir WhatsApp</span>
                 </>
               )}
             </button>
@@ -177,17 +180,16 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1">
               <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-              Coste Estimado vs Presupuesto Semanal
+              Gasto Estimado vs Presupuesto Semanal
             </span>
             <div className="text-right">
               <span className="font-bold text-slate-900 dark:text-white text-sm">
                 {totalCost.toFixed(2)} €
               </span>
-              <span className="text-slate-400"> / {maxBudget} €</span>
+              <span className="text-slate-400"> / {weeklyBudget} €</span>
             </div>
           </div>
 
-          {/* Progress bar */}
           <div className="h-3 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden p-0.5">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
@@ -205,11 +207,11 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
             <span>
               {isOverBudget ? (
                 <span className="text-rose-600 font-bold">
-                  Sobrepasas tu presupuesto por {(totalCost - maxBudget).toFixed(2)} €
+                  Excede el presupuesto en {(totalCost - weeklyBudget).toFixed(2)} €
                 </span>
               ) : (
                 <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                  Te sobran {savings.toFixed(2)} € de tu presupuesto semanal
+                  Ahorro disponible de {savings.toFixed(2)} €
                 </span>
               )}
             </span>
@@ -217,9 +219,9 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
           </div>
         </div>
 
-        {/* Filters: Supermarket & Aisle */}
+        {/* Filter tabs */}
         <div className="space-y-2 pt-2">
-          {/* Supermarket Tabs */}
+          {/* Supermarket Filter */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             <button
               type="button"
@@ -231,13 +233,13 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
               }`}
             >
               <Store className="w-3.5 h-3.5" />
-              <span>Todos los Supermercados ({items.length})</span>
+              <span>Todos los Súpers ({items.length})</span>
             </button>
 
             {presentSupermarkets.map((supId) => {
-              const config = SUPERMARKETS[supId];
+              const conf = SUPERMARKETS[supId];
               const isSelected = selectedSuper === supId;
-              const count = items.filter((i) => i.supermarket === supId).length;
+              const count = items.filter((i) => i.recommendedStore === supId).length;
 
               return (
                 <button
@@ -252,17 +254,17 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
                 >
                   <span
                     className="w-2.5 h-2.5 rounded-full"
-                    style={{ backgroundColor: config.accentColor }}
+                    style={{ backgroundColor: conf?.color || '#16a34a' }}
                   />
                   <span>
-                    {config.name} ({count})
+                    {conf?.name || supId} ({count})
                   </span>
                 </button>
               );
             })}
           </div>
 
-          {/* Aisle Tabs */}
+          {/* Aisle Filter */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
             <button
               type="button"
@@ -270,29 +272,25 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all flex-shrink-0 ${
                 selectedAisle === 'all'
                   ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900'
-                  : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  : 'text-slate-500 hover:bg-slate-100'
               }`}
             >
               Todos los pasillos
             </button>
-            {(Object.keys(AISLE_LABELS) as AisleType[]).map((aisleKey) => {
-              const label = AISLE_LABELS[aisleKey].label;
-              const isSelected = selectedAisle === aisleKey;
-              return (
-                <button
-                  key={aisleKey}
-                  type="button"
-                  onClick={() => setSelectedAisle(aisleKey)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all flex-shrink-0 ${
-                    isSelected
-                      ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900'
-                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
+            {AISLES.map((aisle) => (
+              <button
+                key={aisle}
+                type="button"
+                onClick={() => setSelectedAisle(aisle)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all flex-shrink-0 ${
+                  selectedAisle === aisle
+                    ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900'
+                    : 'text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                {aisle}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -305,29 +303,24 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
               No hay productos con este filtro
             </p>
-            <p className="text-xs text-slate-400 mt-1">
-              Prueba a seleccionar &quot;Todos&quot; para ver la lista completa.
-            </p>
           </div>
         ) : (
           filteredItems.map((item) => {
-            const superConfig = SUPERMARKETS[item.supermarket];
-            const aisleInfo = AISLE_LABELS[item.aisle];
+            const conf = SUPERMARKETS[item.recommendedStore];
 
             return (
               <div
                 key={item.id}
                 onClick={() => handleToggle(item.id)}
                 className={`p-3.5 sm:p-4 rounded-2xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
-                  item.isChecked
+                  item.checked
                     ? 'bg-slate-50 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-800 opacity-60'
                     : 'bg-white dark:bg-slate-900 border-slate-200/90 dark:border-slate-800 hover:border-emerald-400 shadow-sm'
                 }`}
               >
-                {/* Left: Checkbox + Name + Brand + Recipes */}
                 <div className="flex items-start gap-3 min-w-0">
                   <div className="mt-0.5 flex-shrink-0 text-emerald-600">
-                    {item.isChecked ? (
+                    {item.checked ? (
                       <CheckCircle2 className="w-5 h-5" />
                     ) : (
                       <Circle className="w-5 h-5 text-slate-300 dark:text-slate-600 hover:text-emerald-500" />
@@ -338,39 +331,45 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span
                         className={`text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-snug ${
-                          item.isChecked ? 'line-through text-slate-500' : ''
+                          item.checked ? 'line-through text-slate-500' : ''
                         }`}
                       >
-                        {item.name}
+                        {item.supermarketProduct}
                       </span>
-                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                        · {item.packageFormat}
+                      <span className="text-xs text-slate-500 font-medium">
+                        · {item.packSize}
                       </span>
                     </div>
 
-                    {/* Supermarket brand tag + Aisle tag */}
                     <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${superConfig.badgeColor}`}
-                      >
-                        {superConfig.name} ({item.brandName})
-                      </span>
+                      {conf && (
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${conf.badgeColor}`}
+                        >
+                          {conf.name} ({conf.brandName})
+                        </span>
+                      )}
 
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        {aisleInfo?.label || 'Pasillo'}
+                        {item.aisle}
                       </span>
+
+                      {item.usagePercentage === 100 && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          100% Zero-Waste
+                        </span>
+                      )}
                     </div>
 
-                    {/* Used in recipes indicator */}
-                    {item.usedInRecipes && item.usedInRecipes.length > 0 && (
+                    {item.usedInMeals && item.usedInMeals.length > 0 && (
                       <div className="mt-2 flex flex-wrap items-center gap-1 text-[11px] text-emerald-800 dark:text-emerald-300">
                         <span className="font-semibold text-slate-400">Usado en:</span>
-                        {item.usedInRecipes.map((u, i) => (
+                        {item.usedInMeals.map((mealTitle, i) => (
                           <span
                             key={i}
                             className="bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded text-[10px] border border-emerald-200/60 dark:border-emerald-800"
                           >
-                            {u.recipeTitle} ({u.day})
+                            {mealTitle}
                           </span>
                         ))}
                       </div>
@@ -378,18 +377,17 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
                   </div>
                 </div>
 
-                {/* Right: Price & Delete (for custom) */}
                 <div className="flex flex-col items-end flex-shrink-0 pl-2">
                   <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
-                    {(item.estimatedPrice * (item.quantityNeeded || 1)).toFixed(2)} €
+                    {(item.estimatedPrice * item.unitsToBuy).toFixed(2)} €
                   </span>
-                  {item.quantityNeeded > 1 && (
+                  {item.unitsToBuy > 1 && (
                     <span className="text-[10px] text-slate-400">
-                      {item.quantityNeeded} uds x {item.estimatedPrice.toFixed(2)} €
+                      {item.unitsToBuy} uds x {item.estimatedPrice.toFixed(2)} €
                     </span>
                   )}
 
-                  {item.isCustom && onDeleteItem && (
+                  {onDeleteItem && item.id.startsWith('custom-') && (
                     <button
                       type="button"
                       onClick={(e) => {
@@ -431,13 +429,24 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-semibold mb-1">Nombre del Producto</label>
+                <label className="block font-semibold mb-1">Nombre Genérico</label>
                 <input
                   type="text"
                   required
-                  placeholder="ej. Papel de cocina, Café molido..."
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="ej. Papel de cocina, Manzanas..."
+                  value={newGenericName}
+                  onChange={(e) => setNewGenericName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Nombre Comercial / Marca</label>
+                <input
+                  type="text"
+                  placeholder="ej. Papel Cocina Hacendado Extra"
+                  value={newSupermarketProduct}
+                  onChange={(e) => setNewSupermarketProduct(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
                 />
               </div>
@@ -446,8 +455,8 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
                 <div>
                   <label className="block font-semibold mb-1">Supermercado</label>
                   <select
-                    value={newSuper}
-                    onChange={(e) => setNewSuper(e.target.value as SupermarketId)}
+                    value={newStore}
+                    onChange={(e) => setNewStore(e.target.value as SupermarketId)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
                   >
                     {(Object.keys(SUPERMARKETS) as SupermarketId[]).map((s) => (
@@ -462,12 +471,12 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
                   <label className="block font-semibold mb-1">Pasillo</label>
                   <select
                     value={newAisle}
-                    onChange={(e) => setNewAisle(e.target.value as AisleType)}
+                    onChange={(e) => setNewAisle(e.target.value as any)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
                   >
-                    {(Object.keys(AISLE_LABELS) as AisleType[]).map((a) => (
+                    {AISLES.map((a) => (
                       <option key={a} value={a}>
-                        {AISLE_LABELS[a].label}
+                        {a}
                       </option>
                     ))}
                   </select>
@@ -476,18 +485,18 @@ export const SmartShoppingList: React.FC<SmartShoppingListProps> = ({
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold mb-1">Formato de envase</label>
+                  <label className="block font-semibold mb-1">Formato</label>
                   <input
                     type="text"
-                    placeholder="ej. Pack 2x, Bote 500g"
-                    value={newFormat}
-                    onChange={(e) => setNewFormat(e.target.value)}
+                    placeholder="ej. Pack 2x, Malla 1kg"
+                    value={newPackSize}
+                    onChange={(e) => setNewPackSize(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-semibold mb-1">Precio estimado (€)</label>
+                  <label className="block font-semibold mb-1">Precio (€)</label>
                   <input
                     type="number"
                     step="0.05"
