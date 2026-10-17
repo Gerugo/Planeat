@@ -148,6 +148,28 @@ Abre en tu navegador [http://localhost:3000](http://localhost:3000).
 
 ---
 
+## 🌐 Despliegue en GitHub Pages (Automático con GitHub Actions)
+
+El proyecto está configurado para exportación estática (`output: 'export'`) y cuenta con un flujo automatizado de CI/CD mediante **GitHub Actions**.
+
+### Pasos para activarlo en tu repositorio:
+
+1. Entra en tu repositorio en GitHub: [https://github.com/Gerugo/Planeat](https://github.com/Gerugo/Planeat)
+2. Ve a la pestaña **Settings** (Configuración) en la barra superior.
+3. En el menú lateral izquierdo, haz clic en **Pages**.
+4. En el apartado **Build and deployment** -> **Source**:
+   - Cambia de *"Deploy from a branch"* a 👉 **`GitHub Actions`**.
+5. ¡Listo! La acción `.github/workflows/deploy.yml` ya está subida y se encargará automáticamente de:
+   - Instalar dependencias con Node.js 20.
+   - Compilar la aplicación estática de Next.js (`npm run build`).
+   - Publicar el contenido en:  
+     👉 **`https://gerugo.github.io/Planeat/`**
+
+> **¿Cómo funciona la IA en GitHub Pages sin servidor?**  
+> Gracias a la arquitectura implementada en `src/services/geminiService.ts`, el SDK oficial `@google/genai` se ejecuta directamente en el navegador del cliente con la clave del usuario (o utilizando el generador inteligente de demostración precargado), sin necesidad de mantener ningún servidor Node.js activo.
+
+---
+
 ## 📄 Licencia
 
 Este proyecto está bajo la licencia MIT. Creado con ❤️ para optimizar la cesta de la compra y reducir el desperdicio alimentario en España.

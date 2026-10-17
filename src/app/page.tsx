@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
+import { generateWeeklyPlan } from '@/services/geminiService';
+
 const STORAGE_KEY_PLAN = 'whipp_es_weekly_plan_v2';
 const STORAGE_KEY_PREFS = 'whipp_es_user_preferences_v2';
 
@@ -96,24 +98,15 @@ export default function HomePage() {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  // Generate Plan with Gemini API
+  // Generate Plan with Gemini Service (supports static export & GitHub Pages)
   const handleGeneratePlan = async (prefs: UserPreferences, customApiKey?: string) => {
     setIsLoading(true);
     updatePreferences(prefs);
 
     try {
-      const res = await fetch('/api/generate-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          preferences: prefs,
-          apiKey: customApiKey,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.plan) {
-        updatePlan(data.plan);
+      const result = await generateWeeklyPlan(prefs, customApiKey);
+      if (result.plan) {
+        updatePlan(result.plan);
         setActiveTab('menu');
         confetti({
           particleCount: 100,
@@ -121,17 +114,15 @@ export default function HomePage() {
           origin: { y: 0.6 },
         });
 
-        if (data.source === 'gemini') {
+        if (result.source === 'gemini') {
           showNotification('¡Menú generado por Gemini AI con éxito!', 'success');
         } else {
-          showNotification('Menú cargado (Modo Demo WhippES)', 'info');
+          showNotification(result.message || 'Menú cargado (Modo Demo WhippES)', 'info');
         }
-      } else {
-        throw new Error('No se recibió el plan');
       }
     } catch (err: any) {
       console.error('Plan generation error:', err);
-      showNotification('Error al conectar con Gemini. Usando plan de muestra.', 'error');
+      showNotification('Error al optimizar menú. Usando plan de muestra.', 'error');
       updatePlan(MOCK_WEEKLY_PLAN);
       setActiveTab('menu');
     } finally {
